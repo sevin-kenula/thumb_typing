@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thumbtype — hand tracking alphabet</title>
+<style>
+  :root{
+    --ink:#081726;
+    --bone:#EDE7D9;
+    --bone-dim:rgba(237,231,217,.55);
+    --hair:rgba(237,231,217,.18);
+    --signal:#F2B441;
+    --commit:#5FE0B0;
+    --alert:#E8756B;
+    --display:"Bahnschrift SemiCondensed","Bahnschrift","DIN Alternate","Segoe UI",system-ui,sans-serif;
+    --body:"Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:"Cascadia Mono","Consolas","SF Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--ink);color:var(--bone);font-family:var(--body);overflow:hidden}
+  #stage{position:fixed;inset:0;display:grid;place-items:center;background:var(--ink)}
+  video{display:none}
+  canvas{max-width:100%;max-height:100%;display:block}
+
+  #brand{position:fixed;top:22px;left:26px;z-index:5;pointer-events:none;
+    font-family:var(--display);text-transform:uppercase}
+  #brand h1{margin:0;font-size:26px;font-weight:600;letter-spacing:.22em;line-height:1}
+  #brand p{margin:7px 0 0;font-size:11px;letter-spacing:.28em;color:var(--bone-dim)}
+
+  #rail{position:fixed;left:26px;bottom:190px;z-index:5;width:190px;
+    font-family:var(--display);text-transform:uppercase;font-size:11px;letter-spacing:.2em}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:8px;
+    padding:9px 0;border-top:1px solid var(--hair);color:var(--bone-dim)}
+  .row b{font-weight:600;letter-spacing:.14em;color:var(--bone)}
+  .row b.off{color:rgba(237,231,217,.28)}
+  .row b.on{color:var(--commit)}
+  .row b.warn{color:var(--signal)}
+  .row button{font:inherit;letter-spacing:.14em;text-transform:uppercase;font-weight:600;
+    background:none;border:none;padding:0;cursor:pointer;color:var(--commit)}
+  .row button.off{color:rgba(237,231,217,.28)}
+  #rail input[type=range]{width:100%;margin:12px 0 0;accent-color:var(--signal);height:2px}
+
+  #plane{position:fixed;left:26px;right:26px;bottom:26px;z-index:5;
+    background:linear-gradient(180deg,rgba(17,44,72,.92),rgba(8,23,38,.94));
+    border:1px solid var(--hair);border-radius:2px;backdrop-filter:blur(6px)}
+  #plane header{display:flex;align-items:center;gap:12px;padding:9px 16px;
+    border-bottom:1px solid var(--hair);font-family:var(--display);text-transform:uppercase;
+    font-size:10px;letter-spacing:.28em;color:var(--bone-dim)}
+  #plane header .grow{flex:1}
+  #plane header button{font:inherit;letter-spacing:.22em;text-transform:uppercase;
+    background:none;border:1px solid var(--hair);color:var(--bone-dim);
+    padding:5px 11px;border-radius:2px;cursor:pointer}
+  #plane header button:hover{color:var(--bone);border-color:var(--bone-dim)}
+  #plane header button:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+  #out{font-family:var(--mono);font-size:26px;line-height:1.5;letter-spacing:.06em;
+    padding:16px 18px 18px;min-height:96px;max-height:26vh;overflow-y:auto;
+    white-space:pre-wrap;word-break:break-word}
+  #caret{display:inline-block;width:.55em;height:1.05em;vertical-align:-.18em;
+    background:var(--signal);animation:blink 1.05s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  #out:empty::before{content:"Fold a thumb onto a finger joint to begin.";
+    font-family:var(--body);font-size:15px;letter-spacing:0;color:rgba(237,231,217,.35)}
+
+  #chart{position:fixed;top:0;right:0;bottom:0;width:340px;z-index:6;
+    background:rgba(8,23,38,.96);border-left:1px solid var(--hair);
+    padding:26px 24px;overflow-y:auto;transform:translateX(100%);
+    transition:transform .32s cubic-bezier(.4,0,.2,1)}
+  #chart.open{transform:none}
+  #chart h2{font-family:var(--display);text-transform:uppercase;font-size:13px;
+    letter-spacing:.24em;margin:0 0 4px;font-weight:600}
+  #chart .sub{font-size:12px;color:var(--bone-dim);margin:0 0 22px;line-height:1.6}
+  #chart h3{font-family:var(--display);text-transform:uppercase;font-size:10px;
+    letter-spacing:.26em;color:var(--signal);margin:24px 0 8px;font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  td{padding:6px 0;border-top:1px solid var(--hair);color:var(--bone-dim)}
+  td.k{font-family:var(--mono);font-size:15px;color:var(--bone);width:34px}
+  #chartToggle{position:fixed;top:22px;right:26px;z-index:7;
+    font-family:var(--display);text-transform:uppercase;font-size:10px;letter-spacing:.24em;
+    background:rgba(8,23,38,.8);border:1px solid var(--hair);color:var(--bone-dim);
+    padding:8px 13px;border-radius:2px;cursor:pointer}
+  #chartToggle:hover{color:var(--bone)}
+
+  #boot{position:fixed;inset:0;z-index:20;display:grid;place-content:center;justify-items:center;
+    background:var(--ink);text-align:center;padding:32px}
+  #boot h2{font-family:var(--display);text-transform:uppercase;letter-spacing:.24em;font-size:15px;margin:0 0 10px}
+  #boot p{color:var(--bone-dim);font-size:13px;max-width:380px;line-height:1.7;margin:0}
+  #boot.hide{display:none}
+  #boot .err{color:var(--alert)}
+
+  @media (max-width:900px){ #rail{display:none} #out{font-size:20px} }
+  @media (prefers-reduced-motion:reduce){ #caret{animation:none} #chart{transition:none} }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <video id="cam" playsinline muted></video>
+  <canvas id="view" width="1280" height="720"></canvas>
+</div>
+
+<div id="brand">
+  <h1>Thumbtype</h1>
+  <p>Thumb is the stylus &middot; 24 joints &middot; 5 two-hand keys</p>
+</div>
+
+<div id="rail">
+  <div class="row"><span>Left hand</span><b id="sLeft" class="off">absent</b></div>
+  <div class="row"><span>Right hand</span><b id="sRight" class="off">absent</b></div>
+  <div class="row"><span>Nearest key</span><b id="sKey">&mdash;</b></div>
+  <div class="row"><span>Touch score</span><b id="sDist">&mdash;</b></div>
+  <div class="row"><span>State</span><b id="sState" class="off">waiting</b></div>
+  <div class="row"><span>Depth check</span><button id="bDepth" class="on">on</button></div>
+  <div class="row"><span>Zone size</span><b id="sThresh">0.16</b></div>
+  <input id="thresh" type="range" min="8" max="30" value="16" aria-label="Zone size">
+</div>
+
+<button id="chartToggle" aria-expanded="false">Key chart</button>
+
+<aside id="chart" aria-label="Key chart">
+  <h2>Key chart</h2>
+  <p class="sub">Each hand is a keypad of twelve joints. Fold that hand&rsquo;s own thumb onto a joint to type. Y, Z and the controls need both hands.</p>
+  <h3>Right hand &mdash; A to L</h3>
+  <table id="tRight"></table>
+  <h3>Left hand &mdash; M to X</h3>
+  <table id="tLeft"></table>
+  <h3>Both hands</h3>
+  <table id="tPairs"></table>
+  <h3>Tips</h3>
+  <p class="sub">Keep palms towards the camera and fingers spread. Zones never overlap &mdash; each one shrinks to stay clear of its neighbours &mdash; so the score tells you which joint is winning. Press S if the hands are swapped, D for depth check, C to clear.</p>
+</aside>
+
+<div id="plane">
+  <header>
+    <span>Text plane</span>
+    <span class="grow"></span>
+    <button id="bCopy">Copy text</button>
+    <button id="bClear">Clear</button>
+  </header>
+  <div id="out"></div>
+</div>
+
+<div id="boot"><h2>Starting camera</h2><p id="bootMsg">Allow camera access when the browser asks.</p></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/hands.js" crossorigin="anonymous"></script>
+<script>
+(function(){
+'use strict';
+
+/* ---------------------------------------------------------------
+   1. Key map — twelve joints per hand, all inside the thumb's reach
+   --------------------------------------------------------------- */
+const TARGETS = [
+  {lm:8,  finger:'Index',  seg:'tip'},
+  {lm:6,  finger:'Index',  seg:'middle joint'},
+  {lm:5,  finger:'Index',  seg:'base'},
+  {lm:12, finger:'Middle', seg:'tip'},
+  {lm:10, finger:'Middle', seg:'middle joint'},
+  {lm:9,  finger:'Middle', seg:'base'},
+  {lm:16, finger:'Ring',   seg:'tip'},
+  {lm:14, finger:'Ring',   seg:'middle joint'},
+  {lm:13, finger:'Ring',   seg:'base'},
+  {lm:20, finger:'Little', seg:'tip'},
+  {lm:18, finger:'Little', seg:'middle joint'},
+  {lm:17, finger:'Little', seg:'base'}
+];
+const LETTERS = {
+  right:['A','B','C','D','E','F','G','H','I','J','K','L'],
+  left: ['M','N','O','P','Q','R','S','T','U','V','W','X']
+};
+// touch the matching fingertip on the other hand
+const PAIRS = [
+  {lm:4,  name:'Y',        out:{ch:'Y'},      note:'Touch the two thumb tips',        needThumbsFree:true},
+  {lm:8,  name:'Z',        out:{ch:'Z'},      note:'Touch the two index fingertips'},
+  {lm:12, name:'new line', out:{ctrl:'enter'},note:'Touch the two middle fingertips'},
+  {lm:20, name:'delete',   out:{ctrl:'back'}, note:'Touch the two little fingertips'}
+];
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+  [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]
+];
+
+/* ---------------------------------------------------------------
+   2. Tuning
+   --------------------------------------------------------------- */
+let zoneSize   = 0.16;   // largest a zone may be, as a fraction of hand size
+const CLEARANCE = 0.45;  // a zone may not exceed this share of the gap to its nearest neighbour
+const MARGIN    = 0.35;  // the winning zone must beat the runner-up by this much, in scores
+const RELEASE   = 1.70;  // score the thumb must pass before the next keystroke arms
+const DWELL     = 3;     // frames the same joint must hold
+const COOLDOWN  = 200;   // ms between keystrokes
+const SMOOTH    = 0.55;  // landmark smoothing, 1 = no smoothing
+const PAD       = 0.22;  // contact point sits back from the thumb tip, towards the knuckle
+let depthCheck = true;
+let swapHands  = false;
+let text       = '';
+
+function blankHand(){
+  return {seen:false, was:false, pts:null, smooth:null, scale:1, rad:[], stylus:null,
+          near:-1, score:9, gap:9, held:0, heldKey:-1, armed:true, last:0, flash:0, flashKey:-1};
+}
+const hands = {left:blankHand(), right:blankHand()};
+const pairState = {};
+PAIRS.forEach(p=>pairState[p.name] = {armed:true, last:0});
+pairState.space = {armed:true, last:0};
+
+const video  = document.getElementById('cam');
+const canvas = document.getElementById('view');
+const ctx    = canvas.getContext('2d');
+const now    = ()=>performance.now();
+
+// distance with optional depth term; z is noisier than x and y, so it is damped
+function gap(a, b){
+  const dz = depthCheck ? (a.z - b.z) * 0.5 : 0;
+  return Math.hypot(a.x - b.x, a.y - b.y, dz);
+}
+function tp(pts, tg){
+  if(!tg.mid) return pts[tg.lm];
+  const a = pts[tg.mid[0]], b = pts[tg.mid[1]];
+  return {x:(a.x+b.x)/2, y:(a.y+b.y)/2, z:((a.z||0)+(b.z||0))/2};
+}
+const lerp = (a,b,k)=>({x:a.x+(b.x-a.x)*k, y:a.y+(b.y-a.y)*k, z:(a.z||0)+((b.z||0)-(a.z||0))*k});
+
+/* ---------------------------------------------------------------
+   3. Output
+   --------------------------------------------------------------- */
+const out = document.getElementById('out');
+let audio = null;
+function blip(freq){
+  try{
+    audio = audio || new (window.AudioContext||window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.type='triangle'; o.frequency.value=freq;
+    g.gain.setValueAtTime(.0001, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(.09, audio.currentTime+.008);
+    g.gain.exponentialRampToValueAtTime(.0001, audio.currentTime+.11);
+    o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime+.12);
+  }catch(e){}
+}
+function render(){
+  out.textContent = text;
+  if(text) out.appendChild(document.createElement('span')).id = 'caret';
+  out.scrollTop = out.scrollHeight;
+}
+function emit(o){
+  if(o.ch){ text += o.ch; blip(880); }
+  else if(o.ctrl==='space'){ text += ' '; blip(560); }
+  else if(o.ctrl==='back'){ text = text.slice(0,-1); blip(380); }
+  else if(o.ctrl==='enter'){ text += '\n'; blip(700); }
+  render();
+}
+
+/* ---------------------------------------------------------------
+   4. Per-hand detection
+   --------------------------------------------------------------- */
+function measureHand(h, raw){
+  h.seen = true;
+
+  // smooth the landmarks; a hand that has just appeared starts clean
+  if(!h.smooth || !h.was) h.smooth = raw.map(p=>({x:p.x, y:p.y, z:p.z||0}));
+  else h.smooth = h.smooth.map((s,i)=>({
+    x: s.x + (raw[i].x - s.x) * SMOOTH,
+    y: s.y + (raw[i].y - s.y) * SMOOTH,
+    z: s.z + ((raw[i].z||0) - s.z) * SMOOTH
+  }));
+  const pts = h.pts = h.smooth;
+  h.scale = Math.max(Math.hypot(pts[0].x-pts[9].x, pts[0].y-pts[9].y), 1e-6);
+
+  // the pad of the thumb makes contact, not the very tip
+  h.stylus = lerp(pts[4], pts[3], PAD);
+
+  // each zone shrinks to stay clear of its nearest neighbour, so zones never overlap
+  const P = TARGETS.map(tg=>tp(pts, tg));
+  h.rad = P.map((p,i)=>{
+    let nn = 9;
+    for(let j=0;j<P.length;j++){
+      if(i===j) continue;
+      const d = Math.hypot(P[i].x-P[j].x, P[i].y-P[j].y) / h.scale;
+      if(d < nn) nn = d;
+    }
+    return Math.max(Math.min(zoneSize, nn * CLEARANCE), 0.045);
+  });
+
+  // score of 1 means the thumb is exactly on the edge of that zone
+  let best = -1, s1 = 99, s2 = 99;
+  for(let i=0;i<P.length;i++){
+    const s = (gap(h.stylus, P[i]) / h.scale) / h.rad[i];
+    if(s < s1){ s2 = s1; s1 = s; best = i; }
+    else if(s < s2){ s2 = s; }
+  }
+  h.near = best; h.score = s1; h.gap = s2 - s1;
+  if(s1 > RELEASE) h.armed = true;
+}
+
+function commitHand(h, t, blocked){
+  if(blocked){ h.held = 0; h.heldKey = -1; h.armed = false; return; }
+  if(h.score < 1 && h.gap > MARGIN){
+    if(h.near !== h.heldKey){ h.heldKey = h.near; h.held = 0; }
+    h.held++;
+    if(h.held >= DWELL && h.armed && t - h.last > COOLDOWN){
+      h.armed = false; h.last = t; h.flash = t; h.flashKey = h.near;
+      emit({ch:LETTERS[h.key][h.near]});
+    }
+  }else{
+    h.held = 0; h.heldKey = -1;
+  }
+}
+
+/* ---------------------------------------------------------------
+   5. Two-hand keys
+   --------------------------------------------------------------- */
+function palmCentre(p){
+  let x=0,y=0; [0,5,9,13,17].forEach(i=>{x+=p[i].x; y+=p[i].y});
+  return {x:x/5, y:y/5, z:0};
+}
+function fire(st, out, t){
+  if(!st.armed || t - st.last < COOLDOWN*1.6) return;
+  st.armed = false; st.last = t; emit(out);
+}
+
+function readPairs(t){
+  const L = hands.left, R = hands.right;
+  if(!(L.seen && R.seen)){
+    Object.keys(pairState).forEach(k=>pairState[k].armed = true);
+    return null;
+  }
+  const s = (L.scale + R.scale) / 2;
+  const palms = Math.hypot(palmCentre(L.pts).x-palmCentre(R.pts).x,
+                           palmCentre(L.pts).y-palmCentre(R.pts).y) / s;
+
+  if(palms > 1.9) pairState.space.armed = true;
+  if(palms < 0.90){ fire(pairState.space, {ctrl:'space'}, t); return 'space'; }
+
+  // measure every pair, then take the clear winner
+  const d = PAIRS.map(p=>Math.hypot(L.pts[p.lm].x-R.pts[p.lm].x, L.pts[p.lm].y-R.pts[p.lm].y) / s);
+  d.forEach((v,i)=>{ if(v > 0.90) pairState[PAIRS[i].name].armed = true; });
+
+  let k = -1, min = 99;
+  d.forEach((v,i)=>{ if(v < min){ min = v; k = i; } });
+  if(min > 0.40 || palms < 1.15) return null;
+
+  const others = d.filter((v,i)=>i!==k);
+  if(Math.min.apply(null, others) < 0.90) return null;      // more than one pair is closed
+  const p = PAIRS[k];
+  if(p.needThumbsFree && (L.score < RELEASE || R.score < RELEASE)) return null;
+
+  fire(pairState[p.name], p.out, t);
+  return p.name;
+}
+
+/* ---------------------------------------------------------------
+   6. Drawing
+   --------------------------------------------------------------- */
+function drawPlate(){
+  const w = canvas.width, h = canvas.height;
+  ctx.save(); ctx.scale(-1,1);
+  ctx.drawImage(video, -w, 0, w, h);           // mirrored, so it reads like a mirror
+  ctx.restore();
+  ctx.fillStyle = 'rgba(8,23,38,.60)'; ctx.fillRect(0,0,w,h);
+  const v = ctx.createRadialGradient(w/2,h/2,h*.25,w/2,h/2,h*.85);
+  v.addColorStop(0,'rgba(8,23,38,0)'); v.addColorStop(1,'rgba(8,23,38,.75)');
+  ctx.fillStyle = v; ctx.fillRect(0,0,w,h);
+}
+function px(pts){
+  const w = canvas.width, h = canvas.height;
+  return pts.map(p=>({x:(1-p.x)*w, y:p.y*h}));
+}
+
+function drawHand(h, t){
+  const P = px(h.pts);
+  const scale = Math.max(Math.hypot(P[0].x-P[9].x, P[0].y-P[9].y), 1);
+  const dot   = Math.max(scale*0.016, 2);
+  const stylus = {x:(1-h.stylus.x)*canvas.width, y:h.stylus.y*canvas.height};
+
+  ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(237,231,217,.30)';
+  ctx.beginPath();
+  CONNECTIONS.forEach(([a,b])=>{ ctx.moveTo(P[a].x,P[a].y); ctx.lineTo(P[b].x,P[b].y); });
+  ctx.stroke();
+
+  ctx.lineWidth = 3; ctx.strokeStyle = '#F2B441';
+  ctx.beginPath(); ctx.moveTo(P[1].x,P[1].y);
+  [2,3,4].forEach(i=>ctx.lineTo(P[i].x,P[i].y)); ctx.stroke();
+  ctx.fillStyle = '#F2B441';
+  ctx.beginPath(); ctx.arc(stylus.x, stylus.y, dot*1.7, 0, 7); ctx.fill();
+
+  ctx.font = '600 ' + Math.round(Math.max(scale*0.10, 11)) + 'px "Bahnschrift SemiCondensed","DIN Alternate","Segoe UI",sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+
+  TARGETS.forEach((tg,i)=>{
+    const p = tp(P, tg);
+    const ring = h.rad[i] * scale;
+    const isNear = i === h.near && h.score < RELEASE * 1.5;
+    const age = (h.flashKey===i) ? t - h.flash : 1e9;
+    const lit = age < 260;
+
+    ctx.fillStyle = lit ? '#5FE0B0' : (isNear ? '#F2B441' : 'rgba(237,231,217,.42)');
+    ctx.beginPath(); ctx.arc(p.x, p.y, dot, 0, 7); ctx.fill();
+    ctx.fillStyle = lit ? '#5FE0B0' : (isNear ? '#F2B441' : 'rgba(237,231,217,.72)');
+    ctx.fillText(LETTERS[h.key][i], p.x, p.y - ring*0.55 - dot*2.4);
+
+    if(!isNear && !lit) return;
+
+    const clear = h.gap > MARGIN;
+    ctx.setLineDash(h.armed ? [] : [4,5]);
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = lit ? 'rgba(95,224,176,.9)'
+                    : (!h.armed ? 'rgba(237,231,217,.35)'
+                    : (clear ? 'rgba(242,180,65,.65)' : 'rgba(232,117,107,.6)'));
+    ctx.beginPath(); ctx.arc(p.x,p.y,ring,0,Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+
+    if(h.armed && clear && !lit){
+      const fill = Math.min(1, Math.max(0, (RELEASE - h.score) / (RELEASE - 0.35)));
+      if(fill > 0.02){
+        ctx.lineWidth = 3; ctx.strokeStyle = '#F2B441';
+        ctx.beginPath(); ctx.arc(p.x,p.y,ring,-Math.PI/2,-Math.PI/2 + fill*Math.PI*2); ctx.stroke();
+      }
+    }
+    if(lit){
+      const k = age/260;
+      ctx.lineWidth = 3.5*(1-k); ctx.strokeStyle = 'rgba(95,224,176,'+(1-k)+')';
+      ctx.beginPath(); ctx.arc(p.x,p.y,ring + k*ring*1.2, 0, Math.PI*2); ctx.stroke();
+    }
+  });
+}
+
+function drawPairCue(name){
+  if(!name) return;
+  const w = canvas.width;
+  ctx.font = '600 30px "Bahnschrift SemiCondensed","DIN Alternate","Segoe UI",sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillStyle = '#5FE0B0';
+  ctx.fillText(name.toUpperCase(), w/2, 34);
+  ctx.strokeStyle='rgba(95,224,176,.45)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(w/2-70,74); ctx.lineTo(w/2+70,74); ctx.stroke();
+}
+
+/* ---------------------------------------------------------------
+   7. Frame loop
+   --------------------------------------------------------------- */
+const sLeft=document.getElementById('sLeft'), sRight=document.getElementById('sRight'),
+      sKey=document.getElementById('sKey'), sDist=document.getElementById('sDist'),
+      sState=document.getElementById('sState');
+
+function onResults(res){
+  if(video.videoWidth && canvas.width !== video.videoWidth){
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  }
+  const t = now();
+  hands.left.was = hands.left.seen;   hands.left.seen = false;  hands.left.key = 'left';
+  hands.right.was = hands.right.seen; hands.right.seen = false; hands.right.key = 'right';
+
+  drawPlate();
+
+  if(res.multiHandLandmarks && res.multiHandedness){
+    res.multiHandLandmarks
+      .map((pts,i)=>({pts, hd:res.multiHandedness[i]}))
+      .filter(d=>typeof d.hd.score !== 'number' || d.hd.score >= 0.65)
+      .sort((a,b)=>(b.hd.score||1)-(a.hd.score||1))
+      .forEach(d=>{
+        let label = (d.hd.label || 'Right').toLowerCase();
+        if(swapHands) label = label==='left' ? 'right' : 'left';
+        if(hands[label].seen) return;
+        measureHand(hands[label], d.pts);
+      });
+  }
+
+  const pair = readPairs(t);
+  if(hands.left.seen)  commitHand(hands.left,  t, !!pair);
+  if(hands.right.seen) commitHand(hands.right, t, !!pair);
+  if(hands.left.seen)  drawHand(hands.left,  t);
+  if(hands.right.seen) drawHand(hands.right, t);
+  drawPairCue(pair);
+
+  sLeft.textContent  = hands.left.seen  ? 'tracking' : 'absent';
+  sLeft.className    = hands.left.seen  ? 'on' : 'off';
+  sRight.textContent = hands.right.seen ? 'tracking' : 'absent';
+  sRight.className   = hands.right.seen ? 'on' : 'off';
+
+  let a = null;
+  if(hands.left.seen && hands.right.seen) a = hands.left.score < hands.right.score ? hands.left : hands.right;
+  else if(hands.left.seen)  a = hands.left;
+  else if(hands.right.seen) a = hands.right;
+
+  sKey.textContent  = a && a.near>=0 ? LETTERS[a.key][a.near] : '—';
+  sDist.textContent = a ? a.score.toFixed(2) : '—';
+  let st='waiting', cls='off';
+  if(a){
+    if(!a.armed)                  { st='lift thumb';   cls='warn'; }
+    else if(a.score >= 1)         { st='ready';        cls='on'; }
+    else if(a.gap <= MARGIN)      { st='between keys'; cls='warn'; }
+    else                          { st='touching';     cls='on'; }
+  }
+  sState.textContent = st; sState.className = cls;
+}
+
+/* ---------------------------------------------------------------
+   8. Boot
+   --------------------------------------------------------------- */
+const boot=document.getElementById('boot'), bootMsg=document.getElementById('bootMsg');
+function fail(msg){
+  boot.classList.remove('hide');
+  boot.querySelector('h2').textContent = 'Camera not running';
+  bootMsg.className = 'err'; bootMsg.textContent = msg;
+}
+if(typeof Hands === 'undefined'){
+  fail('The hand tracking library did not load. Connect to the internet once so it can be cached, then reload.');
+}else{
+  const tracker = new Hands({locateFile:f=>'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424915/'+f});
+  tracker.setOptions({maxNumHands:2, modelComplexity:1, minDetectionConfidence:.6, minTrackingConfidence:.6});
+  tracker.onResults(onResults);
+
+  let busy = false;
+  function loop(){
+    if(!busy && video.readyState >= 2){
+      busy = true;
+      tracker.send({image:video}).catch(()=>{}).then(()=>{ busy = false; });
+    }
+    requestAnimationFrame(loop);
+  }
+  navigator.mediaDevices.getUserMedia({video:{width:1280,height:720,facingMode:'user'}})
+    .then(stream=>{ video.srcObject = stream; return video.play(); })
+    .then(()=>{ boot.classList.add('hide'); loop(); })
+    .catch(err=>{
+      fail('Access was refused or no camera was found. Serve this page over http://localhost rather than opening the file directly, then allow the camera. (' + err.name + ')');
+    });
+}
+
+/* ---------------------------------------------------------------
+   9. Controls
+   --------------------------------------------------------------- */
+const slider=document.getElementById('thresh'), sThresh=document.getElementById('sThresh'),
+      bDepth=document.getElementById('bDepth');
+slider.addEventListener('input', ()=>{
+  zoneSize = slider.value/100; sThresh.textContent = zoneSize.toFixed(2);
+});
+function setDepth(v){
+  depthCheck = v;
+  bDepth.textContent = v ? 'on' : 'off';
+  bDepth.className = v ? 'on' : 'off';
+}
+document.body.addEventListener('click', e=>{
+  const id = e.target.id;
+  if(id==='bDepth'){ setDepth(!depthCheck); }
+  if(id==='bCopy'){ navigator.clipboard.writeText(text); e.target.textContent='Copied'; setTimeout(()=>e.target.textContent='Copy text',1200); }
+  if(id==='bClear'){ text=''; render(); }
+  if(id==='chartToggle'){
+    const c=document.getElementById('chart'), open=c.classList.toggle('open');
+    e.target.setAttribute('aria-expanded', open);
+  }
+});
+addEventListener('keydown', e=>{
+  const k = e.key.toLowerCase();
+  if(k==='s'){ swapHands = !swapHands; }
+  if(k==='d'){ setDepth(!depthCheck); }
+  if(k==='c'){ text=''; render(); }
+});
+
+['right','left'].forEach(side=>{
+  document.getElementById('t'+side[0].toUpperCase()+side.slice(1)).innerHTML =
+    TARGETS.map((tg,i)=>'<tr><td class="k">'+LETTERS[side][i]+'</td><td>'+tg.finger+' &middot; '+tg.seg+'</td></tr>').join('');
+});
+document.getElementById('tPairs').innerHTML =
+  '<tr><td class="k">&#9251;</td><td>Clap &mdash; bring both palms together</td></tr>' +
+  PAIRS.map(p=>'<tr><td class="k">'+(p.out.ch || {enter:'&#9166;', back:'&#9003;'}[p.out.ctrl])+'</td><td>'+p.note+'</td></tr>').join('');
+render();
+})();
+</script>
+</body>
+</html>
